@@ -15,7 +15,7 @@ on:
         description: 'Mensaje para llamar al administrador'
         required: true
         default: 'sexo'
-      delaydemensaje:
+      otrq:
         description: 'Delay de mensajes'
         required: true
         default: '5000'
@@ -37,7 +37,7 @@ jobs:
       HAXBALL_ROOM_URL: ${{ github.event.inputs.haxball_room_url }}
       MENSAJE: ${{ github.event.inputs.mensaje }}
       LLAMAR_ADMIN: ${{ github.event.inputs.llamar_admin }}
-      DELAYDOWN: ${{ github.event.inputs.delaydemensaje }}
+      OTROQ: ${{ github.event.inputs.otrq }}
       DELAYADMIN: ${{ github.event.inputs.delayadmin }}
       
     steps:
