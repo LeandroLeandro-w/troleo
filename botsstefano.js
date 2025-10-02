@@ -3,21 +3,17 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 // --- CONFIGURACIÓN ---
-const HAXBALL_ROOM_URL = process.env.HAXBALL_ROOM_URL; // Poné tu link
+const HAXBALL_ROOM_URL = process.env.HAXBALL_ROOM_URL;
 const BOT_NICKNAME = process.env.JOB_ID || "bot";
-const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1393006720237961267/lxg_qUjPdnitvXt-aGzAwthMMwNbXyZIbPcgRVfGCSuLldynhFHJdsyC4sSH-Ymli5Xm"; // Tu webhook
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1393006720237961267/lxg_qUjPdnitvXt-aGzAwthMMwNbXyZIbPcgRVfGCSuLldynhFHJdsyC4sSH-Ymli5Xm";
 // ----------------------
 
-// Función para manejar errores críticos y cancelar el job
 function handleCriticalError(error, context = '') {
     console.error(`❌ ERROR CRÍTICO ${context}:`, error);
     notifyDiscord(`🔴 **ERROR CRÍTICO** - Bot ${BOT_NICKNAME} cancelado. ${context}: ${error.message}`);
-    
-    // Forzar la cancelación del job con código de error
     process.exit(1);
 }
 
-// Manejar errores no capturados
 process.on('uncaughtException', (error) => {
     handleCriticalError(error, 'Excepción no capturada');
 });
@@ -31,9 +27,9 @@ async function main() {
     
     let browser;
     let page;
+    let frame;
     
     try {
-        // Timeout para el lanzamiento del navegador
         browser = await Promise.race([
             puppeteer.launch({
                 headless: true,
@@ -42,24 +38,22 @@ async function main() {
             new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout al lanzar el navegador')), 30000))
         ]);
         
-page = await browser.newPage();
+        page = await browser.newPage();
 
-var haxballCountryCodes = [
-  "uy", "ar", "br", "cn", "ly", "me", "vi", "cl", "cy"
-];
+        var haxballCountryCodes = [
+          "uy", "ar", "br", "cn", "ly", "me", "vi", "cl", "cy"
+        ];
 
-var randomCode = haxballCountryCodes[Math.floor(Math.random() * haxballCountryCodes.length)];
+        var randomCode = haxballCountryCodes[Math.floor(Math.random() * haxballCountryCodes.length)];
 
-await page.evaluateOnNewDocument((code) => {
-  localStorage.setItem("geo", JSON.stringify({
-    lat: -34.6504,
-    lon: -58.3878,
-    code: code || 'ar'
-  }));
-}, randomCode);
+        await page.evaluateOnNewDocument((code) => {
+          localStorage.setItem("geo", JSON.stringify({
+            lat: -34.6504,
+            lon: -58.3878,
+            code: code || 'ar'
+          }));
+        }, randomCode);
 
-
-        // Timeout para cargar la página
         await Promise.race([
             page.goto(HAXBALL_ROOM_URL, { waitUntil: 'networkidle2' }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout al cargar la página')), 30000))
@@ -67,13 +61,13 @@ await page.evaluateOnNewDocument((code) => {
         
         await page.waitForSelector('iframe');
         const iframeElement = await page.$('iframe');
-        const frame = await iframeElement.contentFrame();
+        frame = await iframeElement.contentFrame();
         
         if (!frame) {
             throw new Error('No se pudo acceder al iframe de Haxball');
         }
         
-        // Escribir el nick con timeout
+        // Escribir el nick
         console.log("Escribiendo el nombre de usuario...");
         const nickSelector = 'input[data-hook="input"][maxlength="25"]';
         
@@ -84,7 +78,7 @@ await page.evaluateOnNewDocument((code) => {
             throw new Error(`No se pudo escribir el nickname: ${error.message}`);
         }
         
-        // Hacer clic en "Join" con timeout
+        // Hacer clic en "Join"
         console.log("Haciendo clic en 'Join'...");
         const joinButtonSelector = 'button[data-hook="ok"]';
         
@@ -112,28 +106,29 @@ await page.evaluateOnNewDocument((code) => {
         // Enviar mensaje inicial
         await sendMessageToChat(frame, process.env.LLAMAR_ADMIN);
         
-        // Mensaje al chat cada 5 segundos con manejo de errores
+        // IMPORTANTE: Esperar un poco después del primer mensaje
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Mensaje al chat cada X segundos
         const chatInterval = setInterval(async () => {
             try {
                 await sendMessageToChat(frame, process.env.MENSAJE);
             } catch (error) {
-                console.error("Error al enviar mensaje al chat:", error);
-                clearInterval(chatInterval);
-                throw new Error('Perdida de conexión con el chat');
+                console.error("⚠️ Error al enviar mensaje al chat (reintentando):", error.message);
+                // NO lanzar error aquí, solo loguear
             }
-        }, 5000);
+        }, parseInt(process.env.DELAYDOWN));
 
         const otrointerval = setInterval(async () => {
             try {
                 await sendMessageToChat(frame, process.env.LLAMAR_ADMIN);
             } catch (error) {
-                console.error("Error al enviar mensaje al chat:", error);
-                clearInterval(otrointerval);
-                throw new Error('Perdida de conexión con el chat');
+                console.error("⚠️ Error al enviar mensaje admin (reintentando):", error.message);
+                // NO lanzar error aquí, solo loguear
             }
-        }, process.env.DELAYADMIN);
+        }, parseInt(process.env.DELAYADMIN));
         
-        // Movimiento anti-AFK con manejo de errores
+        // Movimiento anti-AFK
         let moves = ['w', 'a', 's', 'd'];
         let moveIndex = 0;
         
@@ -144,25 +139,30 @@ await page.evaluateOnNewDocument((code) => {
                 await page.keyboard.press(key);
                 moveIndex++;
             } catch (error) {
-                console.error("Error al presionar tecla:", error);
-                clearInterval(moveInterval);
-                throw new Error('Perdida de conexión con el juego');
+                console.error("⚠️ Error al presionar tecla:", error.message);
             }
         }, 5000);
         
         // Verificar conexión cada 30 segundos
+        let failedHealthChecks = 0;
         const healthCheck = setInterval(async () => {
             try {
                 const chatSelector = 'input[data-hook="input"][maxlength="140"]';
                 await frame.waitForSelector(chatSelector, { timeout: 5000 });
                 console.log("✅ Conexión activa");
+                failedHealthChecks = 0; // Resetear contador
             } catch (error) {
-                console.error("❌ Fallo en verificación de conexión");
-                clearInterval(healthCheck);
-                clearInterval(chatInterval);
-                clearInterval(otrointerval);
-                clearInterval(moveInterval);
-                throw new Error('Perdida de conexión con el servidor');
+                failedHealthChecks++;
+                console.error(`❌ Fallo en verificación de conexión (${failedHealthChecks}/3)`);
+                
+                // Solo cancelar después de 3 fallos consecutivos
+                if (failedHealthChecks >= 3) {
+                    clearInterval(healthCheck);
+                    clearInterval(chatInterval);
+                    clearInterval(otrointerval);
+                    clearInterval(moveInterval);
+                    throw new Error('Perdida de conexión con el servidor (3 fallos consecutivos)');
+                }
             }
         }, 30000);
         
@@ -171,6 +171,7 @@ await page.evaluateOnNewDocument((code) => {
         
         // Limpiar intervalos
         clearInterval(chatInterval);
+        clearInterval(otrointerval);
         clearInterval(moveInterval);
         clearInterval(healthCheck);
         
@@ -178,7 +179,6 @@ await page.evaluateOnNewDocument((code) => {
         console.error("❌ Error durante la ejecución del bot:", error);
         await notifyDiscord(`🔴 Error al intentar conectar el bot **${BOT_NICKNAME}**. Causa: ${error.message}`);
         
-        // Limpiar recursos antes de salir
         if (browser) {
             try {
                 await browser.close();
@@ -187,7 +187,6 @@ await page.evaluateOnNewDocument((code) => {
             }
         }
         
-        // Cancelar el job con código de error
         process.exit(1);
         
     } finally {
@@ -204,7 +203,7 @@ await page.evaluateOnNewDocument((code) => {
     }
 }
 
-// Enviar mensaje a Discord
+// Enviar notificación a Discord
 async function notifyDiscord(message) {
     if (!DISCORD_WEBHOOK_URL) return;
     
@@ -219,25 +218,57 @@ async function notifyDiscord(message) {
     }
 }
 
-// Enviar mensaje al chat
+// Enviar mensaje al chat con reintentos
 async function sendMessageToChat(frame, message) {
-    try {
-        const chatSelector = 'input[data-hook="input"][maxlength="140"]';
-        await frame.waitForSelector(chatSelector, { timeout: 5000 });
-        const chatInput = await frame.$(chatSelector);
-        
-        if (!chatInput) {
-            throw new Error('No se encontró el input del chat');
+    const maxRetries = 3;
+    
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const chatSelector = 'input[data-hook="input"][maxlength="140"]';
+            
+            // Esperar con timeout más largo
+            await frame.waitForSelector(chatSelector, { timeout: 10000 });
+            
+            // Obtener el input
+            const chatInput = await frame.$(chatSelector);
+            
+            if (!chatInput) {
+                throw new Error('No se encontró el input del chat');
+            }
+            
+            // Hacer click para asegurar foco
+            await chatInput.click();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Limpiar el input primero
+            await chatInput.click({ clickCount: 3 });
+            await frame.keyboard.press('Backspace');
+            
+            // Escribir mensaje
+            await chatInput.type(message, { delay: 50 });
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Enviar
+            await frame.keyboard.press('Enter');
+            
+            console.log(`✉️ Mensaje enviado: ${message}`);
+            
+            // Esperar un poco después de enviar
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            return; // Éxito, salir de la función
+            
+        } catch (error) {
+            console.error(`⚠️ Intento ${i + 1}/${maxRetries} falló:`, error.message);
+            
+            if (i === maxRetries - 1) {
+                // Último intento falló
+                throw error;
+            }
+            
+            // Esperar antes de reintentar
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
-        await chatInput.click();
-        await chatInput.type(message);
-        await chatInput.press('Enter');
-        console.log("Mensaje enviado:", message);
-        
-    } catch (e) {
-        console.error("Error al enviar mensaje al chat:", e);
-        throw e; // Re-lanzar el error para que sea manejado por el caller
     }
 }
 
@@ -250,11 +281,9 @@ async function iniciarBotConReintentos() {
             intentos++;
             console.log(`🔁 Intento ${intentos} de ${MAX_INTENTOS}`);
             await main();
-            break; // Si main termina exitosamente, salimos del bucle
+            break;
         } catch (error) {
             console.error(`❌ Intento ${intentos} fallido:`, error.message);
-
-            // Enviar aviso a Discord si falla
             await notifyDiscord(`🔴 Fallo en intento ${intentos} para el bot **${BOT_NICKNAME}**. Error: ${error.message}`);
 
             if (intentos >= MAX_INTENTOS) {
@@ -263,7 +292,6 @@ async function iniciarBotConReintentos() {
                 process.exit(1);
             }
 
-            // Esperar 5 segundos antes de intentar de nuevo
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
