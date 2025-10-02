@@ -121,7 +121,7 @@ await page.evaluateOnNewDocument((code) => {
                 clearInterval(chatInterval);
                 throw new Error('Perdida de conexión con el chat');
             }
-        }, 5000);
+        }, process.env.DELAY);
 
         const otrointerval = setInterval(async () => {
             try {
@@ -131,7 +131,7 @@ await page.evaluateOnNewDocument((code) => {
                 clearInterval(otrointerval);
                 throw new Error('Perdida de conexión con el chat');
             }
-        }, 600000);
+        }, process.env.DELAYADMIN);
         
         // Movimiento anti-AFK con manejo de errores
         let moves = ['w', 'a', 's', 'd'];
