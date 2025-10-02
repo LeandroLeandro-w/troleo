@@ -37,7 +37,7 @@ jobs:
       HAXBALL_ROOM_URL: ${{ github.event.inputs.haxball_room_url }}
       MENSAJE: ${{ github.event.inputs.mensaje }}
       LLAMAR_ADMIN: ${{ github.event.inputs.llamar_admin }}
-      DELAY: ${{ github.event.inputs.delaydemensaje }}
+      DELAYDOWN: ${{ github.event.inputs.delaydemensaje }}
       DELAYADMIN: ${{ github.event.inputs.delayadmin }}
       
     steps:
